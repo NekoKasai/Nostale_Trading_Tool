@@ -6,7 +6,8 @@ const app = {
     filterMode: 'all',
     feePercent: 0,
     talerPresets: [0],
-    favoriteGroupFilter: 'all',
+    favoriteGroupFilterTaler: 'all',
+    favoriteGroupFilterItems: 'all',
     compareMap: {},
     profiles: ['default'],
     profile: 'default',
@@ -65,8 +66,19 @@ const app = {
         }
 
         const savedGroupFilter = await Database.loadData(Database.STORES.SETTINGS, 'favoriteGroupFilter');
-        if (savedGroupFilter) {
-            this.favoriteGroupFilter = savedGroupFilter;
+        const savedGroupFilterTaler = await Database.loadData(Database.STORES.SETTINGS, 'favoriteGroupFilterTaler');
+        const savedGroupFilterItems = await Database.loadData(Database.STORES.SETTINGS, 'favoriteGroupFilterItems');
+
+        if (savedGroupFilterTaler) {
+            this.favoriteGroupFilterTaler = savedGroupFilterTaler;
+        } else if (savedGroupFilter) {
+            this.favoriteGroupFilterTaler = savedGroupFilter;
+        }
+
+        if (savedGroupFilterItems) {
+            this.favoriteGroupFilterItems = savedGroupFilterItems;
+        } else if (savedGroupFilter) {
+            this.favoriteGroupFilterItems = savedGroupFilter;
         }
 
         talerCalculator.init(talerData);
@@ -123,8 +135,14 @@ const app = {
         document.getElementById('compare-b').addEventListener('change', () => this.updateCompareMetrics());
 
         document.getElementById('favorites-group-filter').addEventListener('change', async (e) => {
-            this.favoriteGroupFilter = e.target.value;
-            await Database.saveData(Database.STORES.SETTINGS, 'favoriteGroupFilter', this.favoriteGroupFilter);
+            const value = e.target.value;
+            if (tabs.currentTab === 'taler') {
+                this.favoriteGroupFilterTaler = value;
+                await Database.saveData(Database.STORES.SETTINGS, 'favoriteGroupFilterTaler', value);
+            } else {
+                this.favoriteGroupFilterItems = value;
+                await Database.saveData(Database.STORES.SETTINGS, 'favoriteGroupFilterItems', value);
+            }
             favorites.updateDisplay();
         });
 

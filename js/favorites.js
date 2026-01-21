@@ -11,8 +11,11 @@ const favorites = {
         const favoritesCount = document.getElementById('favorites-count');
         const groupFilter = document.getElementById('favorites-group-filter');
 
-        const allFavorites = this.getAllFavorites();
-        const groups = Array.from(new Set(allFavorites.map(item => item.favoriteGroup).filter(Boolean)));
+        const activeFavorites = this.getFavoritesForTab(tabs.currentTab);
+        const groups = Array.from(new Set(activeFavorites.map(item => item.favoriteGroup).filter(Boolean)));
+        const activeGroupFilter = tabs.currentTab === 'taler'
+            ? app.favoriteGroupFilterTaler
+            : app.favoriteGroupFilterItems;
 
         if (groupFilter) {
             groupFilter.innerHTML = '';
@@ -26,12 +29,12 @@ const favorites = {
                 option.textContent = group;
                 groupFilter.appendChild(option);
             });
-            groupFilter.value = app.favoriteGroupFilter || 'all';
+            groupFilter.value = activeGroupFilter || 'all';
         }
 
-        const filteredFavorites = allFavorites.filter(item => {
-            if (app.favoriteGroupFilter && app.favoriteGroupFilter !== 'all') {
-                return item.favoriteGroup === app.favoriteGroupFilter;
+        const filteredFavorites = activeFavorites.filter(item => {
+            if (activeGroupFilter && activeGroupFilter !== 'all') {
+                return item.favoriteGroup === activeGroupFilter;
             }
             return true;
         });
@@ -48,21 +51,23 @@ const favorites = {
         }
     },
 
-    getAllFavorites() {
+    getFavoritesForTab(tabName) {
         const favorites = [];
 
-        for (const [category, items] of Object.entries(talerCalculator.data)) {
-            for (const item of items) {
-                if (item.isFavorite) {
-                    favorites.push({ ...item, category, isTalerItem: true });
+        if (tabName === 'taler') {
+            for (const [category, items] of Object.entries(talerCalculator.data)) {
+                for (const item of items) {
+                    if (item.isFavorite) {
+                        favorites.push({ ...item, category, isTalerItem: true });
+                    }
                 }
             }
-        }
-
-        for (const [category, items] of Object.entries(itemsCalculator.data)) {
-            for (const item of items) {
-                if (item.isFavorite) {
-                    favorites.push({ ...item, category, isTalerItem: false });
+        } else {
+            for (const [category, items] of Object.entries(itemsCalculator.data)) {
+                for (const item of items) {
+                    if (item.isFavorite) {
+                        favorites.push({ ...item, category, isTalerItem: false });
+                    }
                 }
             }
         }
