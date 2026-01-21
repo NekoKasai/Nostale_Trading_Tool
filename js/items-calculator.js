@@ -1,4 +1,4 @@
-﻿// Items-Umrechner Funktionalität
+// Items-Umrechner Funktionalitaet
 const itemsCalculator = {
     data: {},
     nextItemId: 2000,
@@ -9,13 +9,21 @@ const itemsCalculator = {
         if (!this.data['Gillion-Rechner']) {
             this.data['Gillion-Rechner'] = [this.createDefaultGillionItem()];
         }
-        for (const items of Object.values(this.data)) {
+        const renamedCategories = this.normalizeCategoryNames();
+        this.splitSpecialCategories();
+        const iconLookup = this.buildIconLookup();
+        const categoriesToSave = new Set();
+        for (const [category, items] of Object.entries(this.data)) {
             items.forEach(item => {
                 if (item.isGillionCalculator) {
                     item.isFavorite = false;
                     item.favoriteGroup = '';
                     item.priceHistory = item.priceHistory || [];
                     return;
+                }
+                if (!item.icon && iconLookup[item.name]) {
+                    item.icon = iconLookup[item.name];
+                    categoriesToSave.add(category);
                 }
                 if (item.sellAmount == null) {
                     item.sellAmount = item.amount;
@@ -27,8 +35,20 @@ const itemsCalculator = {
             });
         }
         this.refreshNextId();
-        this.loadCollapsedStates();
-        this.renderAllCategories();
+        this.loadCollapsedStates().then(() => {
+            this.applyRenamedCategoryStates(renamedCategories);
+            if (Object.keys(this.collapsedCategories).length === 0) {
+                Object.keys(this.data).forEach(category => {
+                    if (category !== 'Gillion-Rechner') {
+                        this.collapsedCategories[category] = true;
+                    }
+                });
+            }
+            this.renderAllCategories();
+        });
+        categoriesToSave.forEach(category => {
+            this.saveCategory(category);
+        });
     },
 
     refreshNextId() {
@@ -55,6 +75,168 @@ const itemsCalculator = {
             isGillionCalculator: true,
             priceHistory: []
         };
+    },
+
+    normalizeCategoryNames() {
+        const renamed = {};
+        const canonicalMap = {
+            heilungstraenke: 'Heilungstr\u00e4nke',
+            ausruestungssetting: 'Ausr\u00fcstungs-Setting',
+            fluegelundschwingen: 'Fl\u00fcgel und Schwingen'
+        };
+
+        const normalizeKey = (name) => {
+            return (name || '')
+                .toLowerCase()
+                .replace(/\u00e4/g, 'ae')
+                .replace(/\u00f6/g, 'oe')
+                .replace(/\u00fc/g, 'ue')
+                .replace(/\u00df/g, 'ss')
+                .replace(/[^a-z0-9]/g, '');
+        };
+
+        Object.keys(this.data).forEach(category => {
+            if (category === 'Gillion-Rechner') return;
+            if (category.includes('Heilungstr?nke')) {
+                this.renameCategory(category, 'Heilungstr\u00e4nke', renamed);
+                return;
+            }
+            if (category.includes('Ausr?stungs-Setting')) {
+                this.renameCategory(category, 'Ausr\u00fcstungs-Setting', renamed);
+                return;
+            }
+            if (category.includes('Fl?gel und Schwingen')) {
+                this.renameCategory(category, 'Fl\u00fcgel und Schwingen', renamed);
+                return;
+            }
+            const normalized = normalizeKey(category);
+            const target = canonicalMap[normalized];
+            if (!target || target === category) return;
+            this.renameCategory(category, target, renamed);
+        });
+
+        return renamed;
+    },
+
+    renameCategory(oldKey, newKey, renamed) {
+        if (this.data[newKey]) {
+            this.data[newKey] = this.data[newKey].concat(this.data[oldKey]);
+        } else {
+            this.data[newKey] = this.data[oldKey];
+        }
+        delete this.data[oldKey];
+        Database.deleteData(Database.STORES.ITEMS_DATA, oldKey);
+        this.saveCategory(newKey);
+        renamed[oldKey] = newKey;
+    },
+
+    applyRenamedCategoryStates(renameMap) {
+        let updated = false;
+        Object.entries(renameMap).forEach(([oldKey, newKey]) => {
+            if (oldKey in this.collapsedCategories && !(newKey in this.collapsedCategories)) {
+                this.collapsedCategories[newKey] = this.collapsedCategories[oldKey];
+                updated = true;
+            }
+            if (oldKey in this.collapsedCategories) {
+                delete this.collapsedCategories[oldKey];
+                updated = true;
+            }
+        });
+        if (updated) {
+            this.saveCollapsedStates();
+        }
+    },
+
+    splitSpecialCategories() {
+        const truhenKey = 'Truhen';
+        const raidKey = 'Raid Siegel';
+        const raidboxKey = 'Raidboxen';
+        const fluegelKey = 'Fl\u00fcgel und Schwingen';
+        const prodKey = 'Produktionsrollen';
+        const targetKeys = [truhenKey, raidKey, raidboxKey, fluegelKey, prodKey];
+        const buckets = {
+            [truhenKey]: [],
+            [raidKey]: [],
+            [raidboxKey]: [],
+            [fluegelKey]: [],
+            [prodKey]: []
+        };
+        const categoriesToDelete = [];
+        const categoriesToSave = new Set();
+
+        const normalizeName = (name) => {
+            return (name || '')
+                .toLowerCase()
+                .replace(/\u00e4/g, 'ae')
+                .replace(/\u00f6/g, 'oe')
+                .replace(/\u00fc/g, 'ue')
+                .replace(/\u00df/g, 'ss');
+        };
+
+        const classifyItem = (name) => {
+            const normalized = normalizeName(name);
+            if (normalized.includes('raidbox')) return raidboxKey;
+            if (normalized.includes('raidsiegel') || normalized.includes('raid siegel')) return raidKey;
+            if (normalized.includes('truhe')) return truhenKey;
+            if (normalized.includes('fluegel') || normalized.includes('schwingen')) return fluegelKey;
+            if (normalized.includes('produktions') && (normalized.includes('rolle') || normalized.includes('schriftrolle'))) {
+                return prodKey;
+            }
+            return null;
+        };
+
+        for (const [category, items] of Object.entries(this.data)) {
+            if (category === 'Gillion-Rechner' || targetKeys.includes(category)) {
+                continue;
+            }
+
+            const kept = [];
+            items.forEach(item => {
+                const target = classifyItem(item.name);
+                if (target) {
+                    buckets[target].push(item);
+                    categoriesToSave.add(category);
+                    return;
+                }
+                kept.push(item);
+            });
+
+            if (kept.length !== items.length) {
+                this.data[category] = kept;
+            }
+
+            if (this.data[category].length === 0) {
+                categoriesToDelete.push(category);
+            }
+        }
+
+        targetKeys.forEach(key => {
+            if (buckets[key].length) {
+                this.data[key] = (this.data[key] || []).concat(buckets[key]);
+                categoriesToSave.add(key);
+            }
+        });
+
+        categoriesToDelete.forEach(category => {
+            delete this.data[category];
+            Database.deleteData(Database.STORES.ITEMS_DATA, category);
+        });
+
+        categoriesToSave.forEach(category => {
+            this.saveCategory(category);
+        });
+    },
+
+    buildIconLookup() {
+        const lookup = {};
+        Object.values(DEFAULT_ITEMS_DATA).forEach(items => {
+            items.forEach(item => {
+                if (item.name && item.icon) {
+                    lookup[item.name] = item.icon;
+                }
+            });
+        });
+        return lookup;
     },
 
     profitForItem(item, sellAmount = null) {
@@ -231,7 +413,7 @@ const itemsCalculator = {
         if (breakEvenCell) {
             if (item.sellPrice > 0 && item.buyPrice > 0) {
                 if (isProfitable) {
-                    breakEvenCell.innerHTML = `<span class="badge">Ab ${breakEvenAmount}</span>`;
+                    breakEvenCell.innerHTML = `<span class="badge">Null-Gewinn ab ${breakEvenAmount}</span>`;
                 } else {
                     breakEvenCell.innerHTML = `<span class="badge loss">Nötig ${breakEvenAmount}</span>`;
                 }
@@ -246,7 +428,7 @@ const itemsCalculator = {
 
         if (favoriteStar) {
             favoriteStar.className = `favorite-star ${item.isFavorite ? 'favorited' : ''}`;
-            favoriteStar.textContent = item.isFavorite ? '★' : '☆';
+            favoriteStar.textContent = item.isFavorite ? '\u2605' : '\u2606';
         }
     },
 
@@ -277,9 +459,9 @@ const itemsCalculator = {
 
         if (breakEvenCell) {
             if (isProfitable) {
-                breakEvenCell.innerHTML = `<span class="badge">Ab ${breakEvenAmount} profitabel</span>`;
+                breakEvenCell.innerHTML = `<span class="badge">Null-Gewinn ab ${breakEvenAmount}</span>`;
             } else {
-                breakEvenCell.innerHTML = `<span class="badge loss">Nicht profitabel</span>`;
+                breakEvenCell.innerHTML = `<span class="badge loss">Kein Gewinn</span>`;
             }
         }
 
@@ -289,7 +471,7 @@ const itemsCalculator = {
 
         if (favoriteStar) {
             favoriteStar.className = `favorite-star ${item.isFavorite ? 'favorited' : ''}`;
-            favoriteStar.textContent = item.isFavorite ? '★' : '☆';
+            favoriteStar.textContent = item.isFavorite ? '\u2605' : '\u2606';
         }
     },
 
@@ -401,13 +583,18 @@ const itemsCalculator = {
         this.collapsedCategories[category] = !this.collapsedCategories[category];
         const content = document.getElementById(`content-items-${category}`);
         const icon = document.getElementById(`icon-items-${category}`);
+        const body = document.getElementById(`tbody-items-${category}`);
 
         if (this.collapsedCategories[category]) {
             content.classList.add('hidden');
             icon.textContent = '+';
+            if (body) {
+                body.innerHTML = '';
+            }
         } else {
             content.classList.remove('hidden');
             icon.textContent = '-';
+            this.renderCategory(category);
         }
         this.saveCollapsedStates();
     },
@@ -417,6 +604,7 @@ const itemsCalculator = {
         if (!container) return;
 
         container.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         let filteredItems = [...this.data[category]];
 
         filteredItems = filteredItems.filter(item => app.itemMatchesFilter(item, false));
@@ -429,11 +617,12 @@ const itemsCalculator = {
 
         sortedItems.forEach(item => {
             if (item.isGillionCalculator) {
-                this.renderGillionItem(category, item, container);
+                this.renderGillionItem(category, item, fragment);
             } else {
-                this.renderNormalItem(category, item, container);
+                this.renderNormalItem(category, item, fragment);
             }
         });
+        container.appendChild(fragment);
     },
 
     renderNormalItem(category, item, container) {
@@ -442,10 +631,11 @@ const itemsCalculator = {
 
         const row = document.createElement('tr');
         row.id = `item-${category}-${item.id}`;
+        const iconMarkup = item.icon ? `<img class="item-icon" src="${item.icon}" alt="">` : '';
 
         row.innerHTML = `
-            <td><span class="favorite-star ${item.isFavorite ? 'favorited' : ''}" onclick="itemsCalculator.toggleFavorite('${category}', ${item.id})">${item.isFavorite ? '★' : '☆'}</span></td>
-            <td><input class="item-name" value="${item.name}"></td>
+            <td><span class="favorite-star ${item.isFavorite ? 'favorited' : ''}" onclick="itemsCalculator.toggleFavorite('${category}', ${item.id})">${item.isFavorite ? '\u2605' : '\u2606'}</span></td>
+            <td class="item-name-cell">${iconMarkup}<input class="item-name" value="${item.name}"></td>
             <td><input type="number" min="0" class="buy-amount" value="${item.amount}"></td>
             <td><input type="number" min="0" class="buy-price" value="${item.buyPrice}"></td>
             <td class="cost-cell">${this.formatNumberWithDots(cost)}</td>
@@ -457,7 +647,7 @@ const itemsCalculator = {
                 ${item.sellPrice > 0 ? `${this.formatNumberWithDots(profit)} (${pct.toFixed(2)}%)` : '-'}
             </td>
             <td class="break-even-cell">
-                ${item.sellPrice > 0 && item.buyPrice > 0 ? (isProfitable ? `<span class="badge">Ab ${breakEvenAmount}</span>` : `<span class="badge loss">Nötig ${breakEvenAmount}</span>`) : '-'}
+                ${item.sellPrice > 0 && item.buyPrice > 0 ? (isProfitable ? `<span class="badge">Null-Gewinn ab ${breakEvenAmount}</span>` : `<span class="badge loss">Null-Gewinn ab ${breakEvenAmount}</span>`) : '-'}
             </td>
             <td><button class="btn small" onclick="itemsCalculator.deleteItem('${category}', ${item.id})">Löschen</button></td>
         `;
@@ -475,7 +665,7 @@ const itemsCalculator = {
         row.className = 'gillion-row';
 
         row.innerHTML = `
-            <td><span class="favorite-star ${item.isFavorite ? 'favorited' : ''}" onclick="itemsCalculator.toggleFavorite('${category}', ${item.id})">${item.isFavorite ? '★' : '☆'}</span></td>
+            <td><span class="favorite-star ${item.isFavorite ? 'favorited' : ''}" onclick="itemsCalculator.toggleFavorite('${category}', ${item.id})">${item.isFavorite ? '\u2605' : '\u2606'}</span></td>
             <td><span>${item.name}</span></td>
             <td><input type="number" min="0" class="gillion-amount" value="${item.amount}"></td>
             <td><input type="text" class="gillion-price" value="${this.formatNumberWithDots(item.gillionPrice)}"></td>
@@ -490,7 +680,7 @@ const itemsCalculator = {
             <td class="trend-cell">${this.renderTrend(item)}</td>
             <td class="profit-cell ${profit >= 0 ? 'profit-positive' : 'profit-negative'}">${this.formatNumberWithDots(profit)} (${pct.toFixed(2)}%)</td>
             <td class="break-even-cell">
-                ${isProfitable ? `<span class="badge">Ab ${breakEvenAmount} profitabel</span>` : `<span class="badge loss">Nicht profitabel</span>`}
+                ${isProfitable ? `<span class="badge">Null-Gewinn ab ${breakEvenAmount}</span>` : `<span class="badge loss">Kein Gewinn</span>`}
             </td>
             <td><button class="btn small" disabled>Löschen</button></td>
         `;
@@ -637,7 +827,15 @@ const itemsCalculator = {
         const container = document.getElementById('items-container');
         container.innerHTML = '';
 
-        for (const [category, items] of Object.entries(this.data)) {
+        const orderedCategories = Object.keys(this.data);
+        const gillionIndex = orderedCategories.indexOf('Gillion-Rechner');
+        if (gillionIndex > 0) {
+            orderedCategories.splice(gillionIndex, 1);
+            orderedCategories.unshift('Gillion-Rechner');
+        }
+
+        for (const category of orderedCategories) {
+            const items = this.data[category];
             if (app.searchTerm) {
                 const hasMatch = items.some(item => app.itemMatchesFilter(item, false));
                 if (hasMatch) {
@@ -673,31 +871,31 @@ const itemsCalculator = {
                                         <th></th>
                                         <th>Item</th>
                                         <th>Gillion</th>
-                                        <th>Preis</th>
-                                        <th>Kosten</th>
+                                        <th>Einkaufspreis</th>
+                                        <th>Einkauf gesamt</th>
                                         <th>Cellon</th>
                                         <th>Kosten</th>
                                         <th>Gesamt</th>
                                         <th>Cella</th>
                                         <th>Output</th>
-                                        <th>Preis</th>
-                                        <th>Erlös</th>
+                                        <th>Verkaufspreis</th>
+                                        <th>Verkauf gesamt</th>
                                         <th>Trend</th>
-                                        <th>Profit</th>
-                                        <th>Schwelle</th>
+                                        <th>Gewinn</th>
+                                        <th>Null-Gewinn</th>
                                         <th></th>
                                     ` : `
                                         <th></th>
                                         <th>Item</th>
-                                        <th>Einkauf</th>
-                                        <th>Preis</th>
-                                        <th>Kosten</th>
-                                        <th>Verkauf</th>
-                                        <th>Preis</th>
-                                        <th>Erlös</th>
+                                        <th>Menge</th>
+                                        <th>Einkaufspreis</th>
+                                        <th>Einkauf gesamt</th>
+                                        <th>Menge</th>
+                                        <th>Verkaufspreis</th>
+                                        <th>Verkauf gesamt</th>
                                         <th>Trend</th>
-                                        <th>Profit</th>
-                                        <th>Schwelle</th>
+                                        <th>Gewinn</th>
+                                        <th>Null-Gewinn</th>
                                         <th></th>
                                     `}
                                 </tr>
@@ -709,7 +907,9 @@ const itemsCalculator = {
             `;
 
             container.appendChild(section);
-            this.renderCategory(category);
+            if (!this.collapsedCategories[category]) {
+                this.renderCategory(category);
+            }
         }
     },
 
@@ -759,5 +959,6 @@ const itemsCalculator = {
         app.updateCompareOptions();
     }
 };
+
 
 

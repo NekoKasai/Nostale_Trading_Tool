@@ -1,26 +1,26 @@
-﻿// Haupt-Applikation
+// Haupt-Applikation
 const app = {
     talerPrice: 0,
     isEditingTaler: false,
     searchTerm: '',
     filterMode: 'all',
-    feePercent: 0,
     talerPresets: [0],
     favoriteGroupFilterTaler: 'all',
     favoriteGroupFilterItems: 'all',
     compareMap: {},
     profiles: ['default'],
     profile: 'default',
+    metaProfile: '__meta__',
 
     async init() {
-        this.loadProfiles();
         try {
             await Database.init();
         } catch (error) {
-            console.warn('Datenbank nicht verfügbar, starte mit Fallback:', error);
+            console.warn('Datenbank nicht verf\u00fcgbar, starte mit Fallback:', error);
         }
 
         try {
+            await this.loadProfiles();
             await this.loadDefaultData();
             this.initUI();
             this.updateKpis();
@@ -55,10 +55,6 @@ const app = {
             this.talerPrice = savedTalerPrice;
         }
 
-        const savedFee = await Database.loadData(Database.STORES.SETTINGS, 'feePercent');
-        if (savedFee !== null && savedFee !== undefined) {
-            this.feePercent = savedFee;
-        }
 
         const savedPresets = await Database.loadData(Database.STORES.SETTINGS, 'talerPresets');
         if (Array.isArray(savedPresets) && savedPresets.length) {
@@ -94,11 +90,6 @@ const app = {
             talerValue.textContent = this.formatNumber(this.talerPrice);
         }
 
-        const feeInput = document.getElementById('fee-input');
-        if (feeInput) {
-            feeInput.value = this.feePercent;
-        }
-        this.updateFeeDisplay();
 
         document.getElementById('edit-taler-btn').addEventListener('click', () => this.toggleTalerEdit());
         document.getElementById('taler-input').addEventListener('keypress', (e) => {
@@ -117,16 +108,6 @@ const app = {
             this.performSearch();
         });
 
-        if (feeInput) {
-            feeInput.addEventListener('input', async (e) => {
-                this.feePercent = parseFloat(e.target.value) || 0;
-                this.updateFeeDisplay();
-                await Database.saveData(Database.STORES.SETTINGS, 'feePercent', this.feePercent);
-                talerCalculator.updateAllCalculations();
-                itemsCalculator.updateAllCalculations();
-                this.updateKpis();
-            });
-        }
 
         document.getElementById('export-btn').addEventListener('click', () => this.exportCsv());
         document.getElementById('import-input').addEventListener('change', (e) => this.importCsv(e));
@@ -168,8 +149,7 @@ const app = {
             return;
         }
     },
-
-    loadProfiles() {
+    async loadProfiles() {
         const rawProfiles = this.safeReadLocal(Database.PROFILES_KEY);
         let profiles = ['default'];
         if (rawProfiles) {
@@ -180,6 +160,15 @@ const app = {
                 }
             } catch (error) {
                 profiles = ['default'];
+            }
+        } else {
+            const storedProfiles = await Database.loadWithProfile(
+                this.metaProfile,
+                Database.STORES.SETTINGS,
+                'profiles'
+            );
+            if (Array.isArray(storedProfiles) && storedProfiles.length) {
+                profiles = storedProfiles;
             }
         }
 
@@ -192,7 +181,14 @@ const app = {
             this.profiles = ['default'];
         }
 
-        const storedProfile = this.safeReadLocal(Database.PROFILE_KEY);
+        let storedProfile = this.safeReadLocal(Database.PROFILE_KEY);
+        if (!storedProfile) {
+            storedProfile = await Database.loadWithProfile(
+                this.metaProfile,
+                Database.STORES.SETTINGS,
+                'profile'
+            );
+        }
         if (storedProfile && this.profiles.includes(storedProfile)) {
             this.profile = storedProfile;
         } else {
@@ -201,16 +197,18 @@ const app = {
 
         Database.setProfile(this.profile);
     },
-
-    saveProfiles() {
+    async saveProfiles() {
         this.safeWriteLocal(Database.PROFILES_KEY, JSON.stringify(this.profiles));
         this.safeWriteLocal(Database.PROFILE_KEY, this.profile);
+        await Database.saveWithProfile(this.metaProfile, Database.STORES.SETTINGS, 'profiles', this.profiles);
+        await Database.saveWithProfile(this.metaProfile, Database.STORES.SETTINGS, 'profile', this.profile);
     },
 
     initProfileUI() {
         const select = document.getElementById('profile-select');
         const addButton = document.getElementById('add-profile-btn');
-        if (!select || !addButton) return;
+        const deleteButton = document.getElementById('delete-profile-btn');
+        if (!select || !addButton || !deleteButton) return;
 
         select.innerHTML = '';
         this.profiles.forEach(profile => {
@@ -221,19 +219,19 @@ const app = {
         });
         select.value = this.profile;
 
-        select.addEventListener('change', (event) => {
+        select.addEventListener('change', async (event) => {
             const next = event.target.value;
             if (!next || next === this.profile) return;
             this.profile = next;
-            this.saveProfiles();
+            await this.saveProfiles();
             location.reload();
         });
 
         addButton.addEventListener('click', () => this.addProfile());
+        deleteButton.addEventListener('click', () => this.deleteProfile());
     },
-
-    addProfile() {
-        const name = prompt('Neues Profil (nur lokal):');
+    async addProfile() {
+        const name = prompt('Profil speichern (nur lokal):');
         if (!name) return;
         const trimmed = name.trim();
         if (!trimmed) return;
@@ -246,7 +244,33 @@ const app = {
             this.profiles.push(trimmed);
         }
         this.profile = trimmed;
-        this.saveProfiles();
+        await this.saveProfiles();
+        location.reload();
+    },
+
+    async deleteProfile() {
+        if (this.profiles.length <= 1) {
+            alert('Es muss mindestens ein Profil vorhanden bleiben.');
+            return;
+        }
+
+        const target = this.profile;
+        const confirmed = confirm(`Profil "${target}" wirklich löschen?`);
+        if (!confirmed) return;
+
+        try {
+            await Database.deleteProfileData(target);
+        } catch (error) {
+            console.warn('Profil konnte nicht gelöscht werden:', error);
+        }
+
+        this.profiles = this.profiles.filter(profile => profile !== target);
+        if (!this.profiles.length) {
+            this.profiles = ['default'];
+        }
+
+        this.profile = this.profiles.includes('default') ? 'default' : this.profiles[0];
+        await this.saveProfiles();
         location.reload();
     },
 
@@ -289,13 +313,6 @@ const app = {
         return result;
     },
 
-    updateFeeDisplay() {
-        const feeValue = document.getElementById('fee-value');
-        if (feeValue) {
-            feeValue.textContent = `${this.feePercent}%`;
-        }
-    },
-
     formatNumber(num) {
         return Number(num || 0).toLocaleString('de-DE');
     },
@@ -306,7 +323,7 @@ const app = {
     },
 
     getFeeMultiplier() {
-        return Math.max(0, 1 - this.feePercent / 100);
+        return 1;
     },
 
     toggleTalerEdit() {
@@ -328,7 +345,7 @@ const app = {
         } else {
             display.classList.remove('hidden');
             edit.classList.add('hidden');
-            button.textContent = 'Preis ändern';
+            button.textContent = 'Taler-Preis ändern';
         }
     },
 

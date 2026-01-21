@@ -1,4 +1,4 @@
-﻿// Favoriten-Management
+// Favoriten-Management
 const favorites = {
     init() {
         this.updateDisplay();
@@ -21,7 +21,7 @@ const favorites = {
             groupFilter.innerHTML = '';
             const allOption = document.createElement('option');
             allOption.value = 'all';
-            allOption.textContent = 'Alle';
+            allOption.textContent = 'Alle Items';
             groupFilter.appendChild(allOption);
             groups.forEach(group => {
                 const option = document.createElement('option');
@@ -118,10 +118,11 @@ const favorites = {
     },
 
     getItemFavoriteRow(item, cost, profit, pct) {
+        const iconMarkup = item.icon ? `<img class="item-icon" src="${item.icon}" alt="">` : '';
         return `
             <td><span class="favorite-star favorited" onclick="itemsCalculator.toggleFavorite('${item.category}', ${item.id})">★</span></td>
             <td>
-                <div>${itemsCalculator.highlightText(item.name, app.searchTerm)}</div>
+                <div class="favorite-name">${iconMarkup}<span>${itemsCalculator.highlightText(item.name, app.searchTerm)}</span></div>
                 <div class="sparkline-values">${item.category}</div>
             </td>
             <td><input type="text" class="favorite-group" value="${item.favoriteGroup || ''}"></td>

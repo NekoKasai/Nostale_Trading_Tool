@@ -25,12 +25,12 @@ const tabs = {
         const talerPanel = document.getElementById('taler-price-panel');
 
         if (tabName === 'taler') {
-            title.textContent = 'Trading Tool';
-            description.textContent = 'Berechne Gewinn und Verlust fuer Items mit Mengenangabe.';
+            title.textContent = '📊 Übersicht';
+            description.textContent = 'Sieh sofort, was du am Ende verdienst.';
             talerPanel.classList.remove('hidden');
         } else {
-            title.textContent = 'Items Umrechner';
-            description.textContent = 'Berechne Gewinn und Verlust fuer spezielle Items wie Engelsfedern oder Gillionsteine.';
+            title.textContent = '💰 Gewinnrechner';
+            description.textContent = 'Rechne schnell aus, was sich für dich lohnt.';
             talerPanel.classList.add('hidden');
         }
 

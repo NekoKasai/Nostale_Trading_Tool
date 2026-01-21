@@ -1,4 +1,4 @@
-﻿// Taler-Rechner Funktionalität
+// Taler-Rechner Funktionalitaet
 const talerCalculator = {
     data: {},
     nextItemId: 100,
@@ -6,8 +6,15 @@ const talerCalculator = {
 
     init(talerData) {
         this.data = talerData;
-        for (const items of Object.values(this.data)) {
+        const iconLookup = this.buildIconLookup();
+        const categoriesToSave = new Set();
+        for (const [category, items] of Object.entries(this.data)) {
             items.forEach(item => {
+                const normalized = this.normalizeName(item.name);
+                if (!item.icon && iconLookup[normalized]) {
+                    item.icon = iconLookup[normalized];
+                    categoriesToSave.add(category);
+                }
                 if (item.sellAmount == null) {
                     item.sellAmount = item.buyAmount;
                 }
@@ -20,6 +27,9 @@ const talerCalculator = {
         this.refreshNextId();
         this.loadCollapsedStates();
         this.renderAllCategories();
+        categoriesToSave.forEach(category => {
+            this.saveCategory(category);
+        });
     },
 
     refreshNextId() {
@@ -34,6 +44,38 @@ const talerCalculator = {
 
     calcCostInGold(talerCost, amount) {
         return talerCost * app.talerPrice * amount;
+    },
+
+    buildIconLookup() {
+        const lookup = {};
+        if (typeof DEFAULT_ITEMS_DATA === 'undefined') return lookup;
+        Object.values(DEFAULT_ITEMS_DATA).forEach(items => {
+            items.forEach(item => {
+                if (item.name && item.icon) {
+                    const fullKey = this.normalizeName(item.name, false);
+                    const strippedKey = this.normalizeName(item.name, true);
+                    lookup[fullKey] = item.icon;
+                    lookup[strippedKey] = item.icon;
+                }
+            });
+        });
+        return lookup;
+    },
+    normalizeName(name, stripParens = true) {
+        let result = (name || '').toLowerCase();
+        if (stripParens) {
+            result = result.replace(/\([^)]*\)/g, '');
+        }
+        result = result
+            .replace(/["'`]/g, '')
+            .replace(/\u00e4/g, 'ae')
+            .replace(/\u00f6/g, 'oe')
+            .replace(/\u00fc/g, 'ue')
+            .replace(/\u00df/g, 'ss')
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return result;
     },
 
     profitFor(item, actualSellAmount = null) {
@@ -148,9 +190,9 @@ const talerCalculator = {
         if (breakEvenCell) {
             if (item.resaleGold > 0 && item.talerCost > 0) {
                 if (isProfitable) {
-                    breakEvenCell.innerHTML = `<span class="badge">Ab ${breakEvenAmount}</span>`;
+                    breakEvenCell.innerHTML = `<span class="badge">Null-Gewinn ab ${breakEvenAmount}</span>`;
                 } else {
-                    breakEvenCell.innerHTML = `<span class="badge loss">Nötig ${breakEvenAmount}</span>`;
+                    breakEvenCell.innerHTML = `<span class="badge loss">Null-Gewinn ab ${breakEvenAmount}</span>`;
                 }
             } else {
                 breakEvenCell.textContent = '-';
@@ -163,7 +205,7 @@ const talerCalculator = {
 
         if (favoriteStar) {
             favoriteStar.className = `favorite-star ${item.isFavorite ? 'favorited' : ''}`;
-            favoriteStar.textContent = item.isFavorite ? '★' : '☆';
+            favoriteStar.textContent = item.isFavorite ? '\u2605' : '\u2606';
         }
     },
 
@@ -259,13 +301,18 @@ const talerCalculator = {
         this.collapsedCategories[category] = !this.collapsedCategories[category];
         const content = document.getElementById(`content-taler-${category}`);
         const icon = document.getElementById(`icon-taler-${category}`);
+        const body = document.getElementById(`tbody-taler-${category}`);
 
         if (this.collapsedCategories[category]) {
             content.classList.add('hidden');
             icon.textContent = '+';
+            if (body) {
+                body.innerHTML = '';
+            }
         } else {
             content.classList.remove('hidden');
             icon.textContent = '-';
+            this.renderCategory(category);
         }
         this.saveCollapsedStates();
     },
@@ -275,6 +322,7 @@ const talerCalculator = {
         if (!container) return;
 
         container.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         let filteredItems = [...this.data[category]];
 
         filteredItems = filteredItems.filter(item => app.itemMatchesFilter(item, true));
@@ -291,11 +339,12 @@ const talerCalculator = {
 
             const row = document.createElement('tr');
             row.id = `taler-${category}-${item.id}`;
+            const iconMarkup = item.icon ? `<img class="item-icon" src="${item.icon}" alt="">` : '';
 
             row.innerHTML = `
                 <td><span class="favorite-star ${item.isFavorite ? 'favorited' : ''}" onclick="talerCalculator.toggleFavorite('${category}', ${item.id})">${item.isFavorite ? '★' : '☆'}</span></td>
                 <td>
-                    <input class="item-name" value="${item.name}">
+                    <div class="item-name-cell">${iconMarkup}<input class="item-name" value="${item.name}"></div>
                 </td>
                 <td><input type="number" min="0" class="buy-amount" value="${item.buyAmount}"></td>
                 <td><input type="number" min="0" class="taler-cost" value="${item.talerCost}"></td>
@@ -308,12 +357,12 @@ const talerCalculator = {
                     ${item.resaleGold > 0 ? `${this.formatNumberWithDots(profit)} (${pct.toFixed(2)}%)` : '-'}
                 </td>
                 <td class="break-even-cell">
-                    ${item.resaleGold > 0 && item.talerCost > 0 ? (isProfitable ? `<span class="badge">Ab ${breakEvenAmount}</span>` : `<span class="badge loss">Nötig ${breakEvenAmount}</span>`) : '-'}
+                    ${item.resaleGold > 0 && item.talerCost > 0 ? (isProfitable ? `<span class="badge">Null-Gewinn ab ${breakEvenAmount}</span>` : `<span class="badge loss">Null-Gewinn ab ${breakEvenAmount}</span>`) : '-'}
                 </td>
                 <td><button class="btn small" onclick="talerCalculator.deleteItem('${category}', ${item.id})">Löschen</button></td>
             `;
 
-            container.appendChild(row);
+            fragment.appendChild(row);
 
             const nameInput = row.querySelector('.item-name');
             const buyAmountInput = row.querySelector('.buy-amount');
@@ -372,6 +421,7 @@ const talerCalculator = {
                 e.target.value = e.target.value.replace(/\./g, '');
             });
         });
+        container.appendChild(fragment);
     },
 
     renderAllCategories() {
@@ -407,15 +457,15 @@ const talerCalculator = {
                                 <tr>
                                     <th></th>
                                     <th>Item</th>
-                                    <th>Einkauf</th>
-                                    <th>Taler</th>
-                                    <th>Kosten</th>
-                                    <th>Verkauf</th>
-                                    <th>Preis</th>
-                                    <th>Erlös</th>
+                                    <th>Menge</th>
+                                    <th>Taler-Preis</th>
+                                    <th>Einkauf gesamt</th>
+                                    <th>Menge</th>
+                                    <th>Verkaufspreis</th>
+                                    <th>Verkauf gesamt</th>
                                     <th>Trend</th>
-                                    <th>Profit</th>
-                                    <th>Schwelle</th>
+                                    <th>Gewinn</th>
+                                    <th>Null-Gewinn</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -426,7 +476,9 @@ const talerCalculator = {
             `;
 
             container.appendChild(section);
-            this.renderCategory(category);
+            if (!this.collapsedCategories[category]) {
+                this.renderCategory(category);
+            }
         }
     },
 

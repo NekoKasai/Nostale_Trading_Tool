@@ -1,4 +1,4 @@
-﻿:root {
+:root {
     --bg: #0b0f14;
     --surface-1: #121821;
     --surface-2: #171f2a;
@@ -433,6 +433,25 @@ tbody tr:nth-child(odd) {
 
 .favorite-star:hover {
     transform: scale(1.1);
+}
+
+.item-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.item-icon {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+    image-rendering: pixelated;
+}
+
+.favorite-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .favorited {

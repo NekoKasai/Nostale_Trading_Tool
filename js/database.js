@@ -1,4 +1,4 @@
-﻿// Datenbank-Management
+// Datenbank-Management
 const Database = {
     // Datenbank-Konstanten
     DB_NAME: 'TalerRechnerDB',
@@ -24,13 +24,38 @@ const Database = {
         return `${this.DB_NAME}:${storeName}`;
     },
 
+    getProfilePrefixFor(profileName) {
+        const trimmed = (profileName || '').toString().trim();
+        return `${trimmed || 'default'}::`;
+    },
+
     setProfile(profileName) {
         const trimmed = (profileName || '').toString().trim();
         this.profile = trimmed || 'default';
     },
 
+    async loadWithProfile(profileName, storeName, key) {
+        const previous = this.profile;
+        this.setProfile(profileName);
+        try {
+            return await this.loadData(storeName, key);
+        } finally {
+            this.setProfile(previous);
+        }
+    },
+
+    async saveWithProfile(profileName, storeName, key, data) {
+        const previous = this.profile;
+        this.setProfile(profileName);
+        try {
+            return await this.saveData(storeName, key, data);
+        } finally {
+            this.setProfile(previous);
+        }
+    },
+
     getProfilePrefix() {
-        return `${this.profile}::`;
+        return this.getProfilePrefixFor(this.profile);
     },
 
     isPrefixedKey(rawKey) {
@@ -54,6 +79,15 @@ const Database = {
 
     belongsToProfile(rawKey) {
         return this.normalizeKey(rawKey) !== null;
+    },
+
+    belongsToProfileKey(rawKey, profileName) {
+        if (rawKey === null || rawKey === undefined) return false;
+        const key = rawKey.toString();
+        const prefix = this.getProfilePrefixFor(profileName);
+        if (key.startsWith(prefix)) return true;
+        if ((profileName || 'default') === 'default' && !key.includes('::')) return true;
+        return false;
     },
 
     getProfileKey(key) {
@@ -172,7 +206,7 @@ const Database = {
                 return Promise.resolve(store[profileKey]);
             }
             if (this.profile === 'default') {
-                return Promise.resolve(store[key] ?? null);
+                return Promise.resolve(store[key] !== undefined ? store[key] : null);
             }
             return Promise.resolve(null);
         }
@@ -238,7 +272,7 @@ const Database = {
         });
     },
 
-    // Daten loeschen
+    // Daten löschen
     async deleteData(storeName, key) {
         if (this.useLocalStorage || this.useMemory || !this.db) {
             const store = this.getLocalStore(storeName);
@@ -301,5 +335,41 @@ const Database = {
             };
             request.onerror = () => reject(request.error);
         });
+    },
+
+    async deleteProfileData(profileName) {
+        const stores = Object.values(this.STORES);
+        if (this.useLocalStorage || this.useMemory || !this.db) {
+            stores.forEach(storeName => {
+                const store = this.getLocalStore(storeName);
+                Object.keys(store).forEach(rawKey => {
+                    if (this.belongsToProfileKey(rawKey, profileName)) {
+                        delete store[rawKey];
+                    }
+                });
+                this.setLocalStore(storeName, store);
+            });
+            return Promise.resolve();
+        }
+
+        return Promise.all(stores.map(storeName => new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.openCursor();
+
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (!cursor) {
+                    resolve();
+                    return;
+                }
+
+                if (this.belongsToProfileKey(cursor.key, profileName)) {
+                    cursor.delete();
+                }
+                cursor.continue();
+            };
+            request.onerror = () => reject(request.error);
+        }))).then(() => undefined);
     }
 };
