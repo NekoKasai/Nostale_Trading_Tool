@@ -1,0 +1,206 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Tool</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="ledger">
+    <div class="app-shell">
+        <nav class="tabs">
+            <button id="tab-taler" class="tab-button active">Trading Tool</button>
+            <button id="tab-items" class="tab-button">Items Umrechner</button>
+        </nav>
+
+        <header class="hero">
+            <div class="hero-text">
+                <h1 id="main-title">Trading Tool</h1>
+                <p id="main-description">Berechne Gewinn und Verlust fuer Items mit Mengenangabe.</p>
+                <div class="kpi-bar">
+                    <div class="kpi">
+                        <div class="kpi-label">Gesamtinvest</div>
+                        <div class="kpi-value" id="kpi-cost">-</div>
+                    </div>
+                    <div class="kpi">
+                        <div class="kpi-label">Gesamterlös</div>
+                        <div class="kpi-value" id="kpi-revenue">-</div>
+                    </div>
+                    <div class="kpi">
+                        <div class="kpi-label">Gesamtprofit</div>
+                        <div class="kpi-value" id="kpi-profit">-</div>
+                    </div>
+                    <div class="kpi">
+                        <div class="kpi-label">ROI</div>
+                        <div class="kpi-value" id="kpi-roi">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-panels">
+                <div class="panel" id="taler-price-panel">
+                    <div class="panel-title" id="price-label">Talerpreis (1 Taler = X Gold)</div>
+                    <div id="taler-display" class="panel-value">
+                        <span id="taler-value">0</span>
+                        <span class="panel-unit">Gold</span>
+                    </div>
+                    <div id="taler-edit" class="panel-edit hidden">
+                        <input type="number" id="taler-input" value="0">
+                        <button class="btn primary" onclick="app.saveTalerPrice()">OK</button>
+                    </div>
+                    <button id="edit-taler-btn" class="btn ghost">Preis ändern</button>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-title">Gebühren</div>
+                    <div class="panel-slider">
+                        <input type="range" id="fee-input" min="0" max="20" step="0.5" value="0">
+                        <div class="panel-hint"><span id="fee-value">0%</span> Abzug auf Verkauf</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-title">Presets</div>
+                    <div class="panel-row">
+                        <select id="taler-preset-select"></select>
+                        <button id="save-preset-btn" class="btn small">Preset speichern</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <section class="controls">
+            <div class="search">
+                <input type="text" id="search-input" placeholder="Items suchen...">
+            </div>
+            <div class="filters">
+                <label for="filter-select">Filter</label>
+                <select id="filter-select">
+                    <option value="all">Alle</option>
+                    <option value="profit">Profitabel</option>
+                    <option value="loss">Verlust</option>
+                    <option value="no-price">Ohne Verkaufspreis</option>
+                </select>
+            </div>
+            <div class="profile-controls">
+                <label for="profile-select">Lokales Profil</label>
+                <div class="profile-row">
+                    <select id="profile-select"></select>
+                    <button id="add-profile-btn" class="btn small">Neues Profil</button>
+                </div>
+                <div class="profile-hint">Aenderungen bleiben nur lokal sichtbar.</div>
+            </div>
+            <div class="actions">
+                <button id="export-btn" class="btn small">CSV Export</button>
+                <label class="btn small file-btn">CSV Import
+                    <input type="file" id="import-input" accept=".csv">
+                </label>
+            </div>
+        </section>
+
+        <section class="compare" id="compare-section">
+            <div class="compare-title">Vergleich</div>
+            <div class="compare-grid">
+                <div class="compare-card">
+                    <label>Item A</label>
+                    <select id="compare-a"></select>
+                    <div class="compare-metrics" id="compare-a-metrics">
+                        <div>Invest: <span class="value">-</span></div>
+                        <div>Erlös: <span class="value">-</span></div>
+                        <div>Profit: <span class="value">-</span></div>
+                        <div>ROI: <span class="value">-</span></div>
+                    </div>
+                </div>
+                <div class="compare-card">
+                    <label>Item B</label>
+                    <select id="compare-b"></select>
+                    <div class="compare-metrics" id="compare-b-metrics">
+                        <div>Invest: <span class="value">-</span></div>
+                        <div>Erlös: <span class="value">-</span></div>
+                        <div>Profit: <span class="value">-</span></div>
+                        <div>ROI: <span class="value">-</span></div>
+                    </div>
+                </div>
+                <div class="compare-card highlight">
+                    <label>Delta</label>
+                    <div class="compare-metrics" id="compare-delta">
+                        <div>Invest: <span class="value">-</span></div>
+                        <div>Erlös: <span class="value">-</span></div>
+                        <div>Profit: <span class="value">-</span></div>
+                        <div>ROI: <span class="value">-</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="favorites-section" class="favorites hidden">
+            <div class="favorites-header">
+                <div class="favorites-title">Favoriten <span id="favorites-count"></span></div>
+                <div class="favorites-filter">
+                    <label for="favorites-group-filter">Gruppe</label>
+                    <select id="favorites-group-filter"></select>
+                </div>
+            </div>
+            <div class="favorites-body">
+                <table>
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Item</th>
+                            <th>Gruppe</th>
+                            <th>Menge Einkauf</th>
+                            <th>Preis Einkauf</th>
+                            <th>Kosten</th>
+                            <th>Menge Verkauf</th>
+                            <th>Preis Verkauf</th>
+                            <th>Gewinn</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="favorites-tbody"></tbody>
+                </table>
+                <div id="no-favorites" class="empty">Noch keine Favoriten gesetzt.</div>
+            </div>
+        </section>
+
+        <div id="tab-taler-content" class="tab-content">
+            <div class="section-header">
+                <h2>Taler Items</h2>
+                <div class="section-actions">
+                    <button onclick="talerCalculator.expandAllCategories()" class="btn small">Alle aufklappen</button>
+                    <button onclick="talerCalculator.collapseAllCategories()" class="btn small">Alle zuklappen</button>
+                    <button onclick="talerCalculator.addNewCategory()" class="btn">+ Kategorie</button>
+                </div>
+            </div>
+            <div id="taler-items-container"></div>
+        </div>
+
+        <div id="tab-items-content" class="tab-content hidden-tab">
+            <div class="section-header">
+                <h2>Items Umrechner</h2>
+                <div class="section-actions">
+                    <button onclick="itemsCalculator.expandAllCategories()" class="btn small">Alle aufklappen</button>
+                    <button onclick="itemsCalculator.collapseAllCategories()" class="btn small">Alle zuklappen</button>
+                    <button onclick="itemsCalculator.addNewCategory()" class="btn">+ Kategorie</button>
+                </div>
+            </div>
+            <div id="items-container"></div>
+        </div>
+
+        <footer class="footer">
+            Hinweis: Diese App rechnet direkt mit den eingegebenen Zahlen. Transaktionskosten und Gebühren sind nicht automatisch enthalten.
+        </footer>
+    </div>
+
+    <script src="data/default-data.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/favorites.js"></script>
+    <script src="js/taler-calculator.js"></script>
+    <script src="js/items-calculator.js"></script>
+    <script src="js/tabs.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
+
