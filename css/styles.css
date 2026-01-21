@@ -395,6 +395,10 @@ input[type="text"] {
     overflow: hidden;
 }
 
+.category-content .panel {
+    overflow-x: auto;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -512,5 +516,72 @@ tbody tr:nth-child(odd) {
 
     .tabs {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .app-shell {
+        padding: 20px 14px 40px;
+    }
+
+    h1 {
+        font-size: 2.1rem;
+    }
+
+    h2 {
+        font-size: 1.4rem;
+    }
+
+    .tab-button {
+        padding: 12px 14px;
+    }
+
+    .kpi-bar {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    }
+
+    .panel {
+        padding: 14px;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .section-actions {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .section-actions .btn {
+        flex: 1 1 140px;
+    }
+
+    .actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .actions .btn,
+    .actions .file-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .favorites-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .header-row,
+    .header-actions {
+        flex-wrap: wrap;
+    }
+
+    table {
+        min-width: 720px;
     }
 }
